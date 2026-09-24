@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="clave" content="{{CLAVE}}">
+  <meta name="version" content="{{VERSION}}">
+  <title>{{NOMBRE}}</title>
+  <link rel="icon" href="/web/icono.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/web/estilos.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <aside class="lateral" id="lateral">
+      <div class="marca-app">
+        <img src="/web/icono.svg" alt="" width="30" height="30">
+        <div>
+          <strong>{{NOMBRE}}</strong>
+          <small id="nombre-tienda">Sin conectar</small>
+        </div>
+      </div>
+      <nav id="menu" class="menu"></nav>
+      <div class="lateral-pie">
+        <span class="version">v{{VERSION}}</span>
+      </div>
+    </aside>
+    <main class="principal" id="principal"></main>
+  </div>
+  <div id="capa-modal"></div>
+  <div id="avisos" class="avisos" aria-live="polite"></div>
+  <script src="/web/app.js"></script>
+</body>
+</html>

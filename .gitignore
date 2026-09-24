@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# lo que genera construir.bat
+build/
+dist/
+empaquetar/icono.ico
+empaquetar/icono.png
+
+# credenciales y datos de desarrollo: nunca al repositorio
+.env
+datos-dev/
+*.xlsx
+*.pdf
+
+# editores
+.vscode/
+.idea/
