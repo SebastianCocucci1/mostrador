@@ -111,10 +111,12 @@ def leer(ruta):
 
 def adivinar(filas):
     """Donde esta el encabezado y cuales son las columnas de codigo, precio y descripcion."""
+    # la fila de titulos tiene al menos dos titulos cortos ("Codigo", "Precio"...):
+    # un titulo suelto como "LISTA DE PRECIOS AGOSTO" no cuenta
     enc = None
-    mejor = 0
+    mejor = 1
     for i, f in enumerate(filas[:30]):
-        n = sum(1 for c in f if c and len(c) < 40 and PAT_ENCABEZADO.search(c))
+        n = sum(1 for c in f if c and len(c) <= 25 and PAT_ENCABEZADO.search(c))
         if n > mejor:
             enc, mejor = i, n
     ancho = len(filas[0]) if filas else 0
@@ -160,12 +162,30 @@ def adivinar(filas):
     return {"fila_encabezado": enc, "col_codigo": col_codigo, "col_precio": col_precio, "col_desc": col_desc}
 
 
+def precios_sugeridos(doc, h, g):
+    """Cuantos renglones con codigo y precio salen de la hoja con las columnas adivinadas."""
+    if g["col_codigo"] is None or g["col_precio"] is None:
+        return 0
+    return len(items_de_columnas(doc, h["nombre"], g["col_codigo"], g["col_precio"], g["fila_encabezado"]))
+
+
 def muestra(doc):
-    """Lo que se le manda a la interfaz para elegir columnas (sin mandar todo)."""
+    """Lo que se le manda a la interfaz para elegir columnas (sin mandar todo).
+
+    Cada hoja dice cuantos precios se leen con lo adivinado, y "mejor" es la
+    hoja con mas: los Excel de proveedores suelen traer un indice o una
+    caratula en la primera hoja.
+    """
+    hojas = []
+    for h in doc["hojas"]:
+        g = adivinar(h["filas"])
+        hojas.append({"nombre": h["nombre"], "filas": h["filas"][:MAX_FILAS_MUESTRA], "total": len(h["filas"]),
+                      "sugerido": g, "precios": precios_sugeridos(doc, h, g)})
+    mejor = max(range(len(hojas)), key=lambda i: hojas[i]["precios"]) if hojas else None
     return {
         "tipo": doc["tipo"],
-        "hojas": [{"nombre": h["nombre"], "filas": h["filas"][:MAX_FILAS_MUESTRA], "total": len(h["filas"]),
-                   "sugerido": adivinar(h["filas"])} for h in doc["hojas"]],
+        "hojas": hojas,
+        "mejor": mejor,
         "lineas": len(doc["lineas"]),
         "precios_en_texto": sum(1 for x in doc["lineas"] if PAT_PRECIO_TEXTO.search(x)),
     }
@@ -280,6 +300,23 @@ def redondear(x, paso):
 
 # ======================================================== vista previa
 
+PAT_PARENTESIS_FINAL = re.compile(r"\s*[(\[][^()\[\]]*[)\]]\s*$")
+
+
+def claves_de_codigo(cod):
+    """Las formas de un codigo de la lista con las que se busca en la tienda.
+
+    Muchos proveedores agregan al final, entre parentesis, la cantidad por caja
+    o una nota: "ABUYA-S (1u)", "EMBU-1 (50u)". Primero se prueba el codigo
+    entero y despues sin eso.
+    """
+    salida = [compacto(cod)]
+    sin = PAT_PARENTESIS_FINAL.sub("", str(cod or ""))
+    if sin != cod and compacto(sin):
+        salida.append(compacto(sin))
+    return salida
+
+
 def _variantes(productos, marca=None):
     for p in productos:
         if marca and (p.get("brand") or "").strip().lower() != marca.strip().lower():
@@ -302,7 +339,7 @@ def vista_previa(productos, items, regla, por="sku", marca=None, no_bajar=False,
 
     cambios, sin_coincidencia, usados = [], [], {}
     for cod, p_lista, desc, origen in items:
-        encontrados = indice.get(compacto(cod))
+        encontrados = next((indice[k] for k in claves_de_codigo(cod) if k in indice), None)
         if not encontrados:
             sin_coincidencia.append({"codigo": cod, "precio_lista": p_lista, "descripcion": desc,
                                      "origen": origen})

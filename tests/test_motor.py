@@ -85,6 +85,15 @@ def test_vista_previa_por_sku():
     assert por_sku["VK-NUBE-N"]["avisos"] and not por_sku["VK-NUBE-N"]["elegido"]
 
 
+def test_codigo_con_cantidad_entre_parentesis():
+    # Dabor: "ABUYA-S (1u)" en la lista, "abuya-s" en la tienda
+    tienda = [producto(9, "Abuya", [("abuya-s", 0, None), ("abuya-m", 0, None)])]
+    items = [("ABUYA-S (1u)", 100, "", ""), ("ABUYA-M (50 u)", 200, "", ""), ("ABUYA-X [nuevo]", 5, "", "")]
+    v = precios.vista_previa(tienda, items, {}, por="sku")
+    assert {c["sku"]: c["precio_nuevo"] for c in v["cambios"]} == {"abuya-s": 100, "abuya-m": 200}
+    assert precios.claves_de_codigo("A (1u)") == ["A1U", "A"]
+
+
 def test_vista_previa_marca_y_no_bajar():
     items = [("AP-SOL", 2400, "", ""), ("PL-LUNA", 100, "", "")]
     v = precios.vista_previa(TIENDA, items, {"multiplicador": 2}, marca="acme", no_bajar=True)
@@ -109,6 +118,22 @@ def test_columnas_y_adivinar():
     assert g == {"fila_encabezado": 1, "col_codigo": 0, "col_precio": 2, "col_desc": 1}
     items = precios.items_de_columnas(doc, "Lista", g["col_codigo"], g["col_precio"], g["fila_encabezado"])
     assert [(c, p) for c, p, *_ in items] == [("AP-SOL", 2500), ("VK-NUBE-N", 7000)]
+
+
+def test_elige_la_hoja_con_precios_y_no_el_indice():
+    # como el Excel de Dabor: un indice (nombre -> pagina) antes de las listas
+    doc = {"tipo": "planilla", "lineas": [], "hojas": [
+        {"nombre": "INDICE", "filas": [["INDICE", "LISTA DE PRECIOS Nº76 AGOSTO 2025"],
+                                       ["ABUYA", "6"], ["AKAKI", "6"], ["ALTOS", "9"]]},
+        {"nombre": "LAMPARAS", "filas": [["CODIGO", "DESCRIPCION", "$"], ["L-E27-7W", "Lampara", "1052,50"]]},
+        {"nombre": "ARTEFACTOS", "filas": [["ARTICULO", "DESCRIPCION", "PRECIO"], ["ABUYA-S", "Colgante", "58000"],
+                                           ["AKAKI-M", "Colgante", "61000"]]},
+    ]}
+    m = precios.muestra(doc)
+    assert [h["precios"] for h in m["hojas"]] == [0, 1, 2]
+    assert m["mejor"] == 2
+    # un titulo suelto no es la fila de titulos
+    assert m["hojas"][0]["sugerido"]["fila_encabezado"] is None
 
 
 def test_buscar_en_texto():

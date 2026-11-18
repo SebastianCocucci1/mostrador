@@ -1100,7 +1100,7 @@ async function paginaPrecios(el) {
         const r = await api("POST", "/api/precios/archivo", undefined, form);
         PR.lista = r;
         if (r.hojas.length) {
-          const h = r.hojas[0];
+          const h = r.hojas[r.mejor ?? 0];     // la hoja con más precios, no la primera
           Object.assign(PR, { modo: "columnas", hoja: h.nombre, enc: h.sugerido.fila_encabezado, cCod: h.sugerido.col_codigo, cPre: h.sugerido.col_precio, cDesc: h.sugerido.col_desc });
         } else PR.modo = "buscar";
         PR.paso = 2;
@@ -1136,9 +1136,20 @@ async function paginaPrecios(el) {
           <div><strong>Buscar mis códigos en el texto</strong><p>Para catálogos en PDF donde el precio aparece al lado de cada producto. La app busca cada SKU de tu tienda y toma su precio.</p></div></label>
       </div>
       ${PR.modo === "columnas" && hoja ? `
+        <div class="aviso-caja">${ico("info")}<div>
+          <strong>Decile a la app dónde está cada cosa.</strong> Ya lo adiviné; solo revisá la tabla de abajo:
+          <ul style="margin:6px 0 0;padding-left:18px">
+            ${L.hojas.length > 1 ? "<li><strong>Hoja:</strong> la pestaña del Excel donde están los precios (muchos traen un índice o una carátula en la primera).</li>" : ""}
+            <li><strong>Código</strong> (en azul): la columna con el código de cada producto, el mismo que tenés como SKU en tu tienda.</li>
+            <li><strong>Precio</strong> (en verde): la columna con el precio de lista.</li>
+            <li><strong>Fila de títulos:</strong> la fila que dice «Código», «Precio», etc. Lo que está arriba de ella se ignora.</li>
+          </ul></div></div>
+        ${!hoja.precios && PR.cCod === hoja.sugerido.col_codigo && PR.cPre === hoja.sugerido.col_precio ? `<div class="aviso-caja alerta">${ico("alerta")}<div>
+          <strong>Esta hoja no parece una lista de precios</strong>: no encontré una columna de códigos con precios al lado.
+          ${L.hojas.length > 1 ? "Probá con otra hoja en el desplegable «Hoja»." : "Elegí las columnas a mano, o probá «Buscar mis códigos en el texto»."}</div></div>` : ""}
         <div class="grilla-4">
-          ${L.hojas.length > 1 ? `<div class="campo"><label>Hoja</label><select class="input" id="pr-hoja">${L.hojas.map((h) => `<option ${h.nombre === hoja.nombre ? "selected" : ""}>${esc(h.nombre)}</option>`).join("")}</select></div>` : ""}
-          <div class="campo"><label>Títulos en la fila</label><select class="input" id="pr-enc"><option value="">No tiene títulos</option>${hoja.filas.slice(0, 30).map((_, i) => `<option value="${i}" ${PR.enc === i ? "selected" : ""}>Fila ${i + 1}</option>`).join("")}</select></div>
+          ${L.hojas.length > 1 ? `<div class="campo"><label>Hoja</label><select class="input" id="pr-hoja">${L.hojas.map((h) => `<option value="${esc(h.nombre)}" ${h.nombre === hoja.nombre ? "selected" : ""}>${esc(h.nombre.trim())} — ${h.precios ? plural(h.precios, "precio", "precios") : "sin precios"}</option>`).join("")}</select></div>` : ""}
+          <div class="campo"><label>Fila de títulos</label><select class="input" id="pr-enc"><option value="">No tiene títulos</option>${hoja.filas.slice(0, 30).map((_, i) => `<option value="${i}" ${PR.enc === i ? "selected" : ""}>Fila ${i + 1}</option>`).join("")}</select></div>
           <div class="campo"><label><span class="insignia primario">Código</span> en la columna</label><select class="input" id="pr-cod">${opcionesCol(PR.cCod, "Elegí…")}</select></div>
           <div class="campo"><label><span class="insignia exito">Precio</span> en la columna</label><select class="input" id="pr-pre">${opcionesCol(PR.cPre, "Elegí…")}</select></div>
         </div>
