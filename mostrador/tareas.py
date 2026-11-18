@@ -84,6 +84,12 @@ def lanzar(titulo, trabajo):
     return t
 
 
+def hay_en_curso():
+    """Hay algun trabajo corriendo? (el actualizador espera a que terminen)."""
+    with _candado:
+        return any(t.estado == "corriendo" for t in _tareas.values())
+
+
 def buscar(tid):
     return _tareas.get(tid)
 

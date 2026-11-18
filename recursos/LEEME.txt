@@ -1,0 +1,29 @@
+MOSTRADOR - gestioná los productos de tu tienda Tiendanube
+==========================================================
+
+INSTALARLO (una sola vez)
+
+1. Antes de descomprimir el archivo Mostrador.zip: clic derecho > Propiedades >
+   tildá "Desbloquear" > Aceptar. Así Windows no pregunta por cada archivo.
+2. Descomprimilo en C:\ (queda la carpeta C:\Mostrador).
+3. Abrí "Abrir Mostrador" (en esa carpeta). Se abre Mostrador en el navegador y
+   aparece el ícono "Mostrador" en el escritorio. De ahí en adelante, abrilo
+   desde ese ícono.
+4. La primera vez, pegá el número de tienda y el token que te mandamos.
+
+USARLO
+
+Doble clic en el ícono "Mostrador" del escritorio: se abre en el navegador.
+Si ya estaba abierto, solo vuelve a mostrar la página.
+
+ACTUALIZACIONES
+
+Se actualiza solo. Para buscar en el momento: Configuración > Actualizaciones >
+"Buscar actualizaciones". Tus datos y la conexión con tu tienda no se tocan.
+
+SI ALGO FALLA
+
+- El antivirus lo bloquea: agregá la carpeta C:\Mostrador como excepción.
+- No abre: reiniciá la computadora y abrilo desde el ícono del escritorio.
+- Para ver qué pasó: el registro está en %APPDATA%\Mostrador\mostrador.log
+  (pegá eso en la barra de direcciones del Explorador de archivos).

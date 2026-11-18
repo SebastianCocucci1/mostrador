@@ -5,15 +5,14 @@ __pycache__/
 venv/
 .pytest_cache/
 
-# lo que genera construir.bat
+# lo que genera scripts/armar_paquete.ps1
 build/
 dist/
-empaquetar/icono.ico
-empaquetar/icono.png
 
 # credenciales y datos de desarrollo: nunca al repositorio
 .env
 datos-dev/
+vendedor/clientes.json
 *.xlsx
 *.pdf
 

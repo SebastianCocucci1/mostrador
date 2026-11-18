@@ -294,6 +294,13 @@ table.tabla { width: 100%; border-collapse: separate; border-spacing: 0; }
 /* ================================================================ productos */
 .barra-herr { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--borde); }
 #p-masiva { position: sticky; bottom: 16px; z-index: 5; }
+/* "Mostrador se está actualizando…": arriba al centro, sobre todo lo demás */
+.banda-sistema {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 12px;
+  background: var(--texto); color: var(--superficie); box-shadow: var(--sombra-3); font-size: 14px;
+  max-width: calc(100vw - 32px);
+}
 .barra-masiva {
   margin: 16px auto 0; width: fit-content; max-width: 100%;
   display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; border-radius: 12px;

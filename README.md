@@ -32,15 +32,76 @@ encuentra a `vk-fan-10`.
 
 ## Para el usuario final
 
-1. Instalar con `Mostrador-<versión>-instalador.exe`.
-2. Al abrir, un asistente explica cómo conectar la tienda: se crea una aplicación gratuita en
-   [partners.tiendanube.com](https://partners.tiendanube.com) (distribución *para comerciantes
-   específicos*, permisos de productos), se autoriza, y listo. La conexión no vence.
+No necesita Python ni nada instalado: el paquete trae el Python oficial.
 
-La conexión y los respaldos se guardan en `%APPDATA%\Mostrador\`; las planillas exportadas, en
-`Documentos\Mostrador\`.
+1. Bajar `Mostrador.zip` de la última versión en **Releases**. Antes de descomprimirlo: clic
+   derecho > Propiedades > tildar **Desbloquear** > Aceptar.
+2. Descomprimirlo en `C:\` (queda `C:\Mostrador`) y abrir **Abrir Mostrador**. Se abre la página
+   en el navegador y aparece el ícono **Mostrador** en el escritorio y en el menú Inicio. De ahí
+   en adelante se abre desde ese ícono (si ya está corriendo, solo vuelve a mostrar la página).
+3. Pegar el **número de tienda** y el **token** que le mandó el vendedor (o el mensaje
+   entero en un solo campo: se separan solos). La app los prueba, muestra el nombre de la tienda
+   y queda conectada. La conexión no vence.
 
-Necesita Windows 10 u 11 con WebView2 (viene instalado en Windows 11 y en los 10 actualizados).
+El zip trae un `LEEME.txt` con estos pasos.
+
+Quien prefiera crear su propia aplicación de Tiendanube tiene el asistente de antes en
+"Conexión avanzada".
+
+## Alta de un cliente (para el vendedor)
+
+Tiendanube no le da el token al comerciante: sale de autorizar una aplicación. Lo saca el
+vendedor con su propia app de partners (distribución *para comerciantes específicos*, URL de
+redirección `https://localhost/`, permisos de productos; el nombre es el que ve el cliente al
+aceptar):
+
+```
+python vendedor/alta_cliente.py
+```
+
+Te da un mensaje con el link para mandarle al cliente; él acepta y te devuelve la dirección a la
+que lo llevó; la pegás y te da el mensaje con su número de tienda y su token. La primera vez pide
+el App ID y el Client secret y los guarda en `vendedor/.env`. `vendedor/` no va en el instalador
+y ni `.env` ni `clientes.json` van al repositorio.
+
+La conexión, los respaldos y el registro (`mostrador.log`) se guardan en `%APPDATA%\Mostrador\`;
+las planillas exportadas, en `Documentos\Mostrador\`. Las actualizaciones no los tocan.
+
+## Actualizaciones automáticas
+
+Cada vez que se sube un cambio a `main`, GitHub Actions corre las pruebas, arma el paquete en una
+máquina Windows (bajando el Python embebido oficial y verificando su firma), prueba que arranque y
+que se actualice solo, y lo publica en **Releases** con un número de versión nuevo (`1.<n>`). Para
+generar de nuevo sin cambiar código: **Actions** > "Generar paquete" > **Run workflow**.
+
+El programa se actualiza solo: cada 15 minutos consulta los Releases (o en el momento, con
+**Configuración > Actualizaciones > Buscar actualizaciones**) y, si hay una versión nueva:
+
+1. Descarga `Mostrador-app.zip` (solo el código, unos 120 KB) y verifica su SHA-256 contra el
+   `.sha256` publicado. Si no coincide, no instala nada.
+2. Si la versión nueva pide otras librerías (cambió `requirements.txt`), baja también
+   `Mostrador-lib.zip` (unos 23 MB) y lo deja listo en `lib.new`.
+3. Cambia la carpeta `app` por la nueva (si algo falla, vuelve todo como estaba) y se reinicia.
+   Al arrancar, antes de cargar nada, pone las librerías nuevas en su lugar: tienen partes
+   compiladas que Windows no deja mover mientras el programa viejo las usa.
+4. La página abierta muestra "se está actualizando" y se recarga sola cuando vuelve.
+
+No instala mientras haya un trabajo en curso (aplicando precios, un respaldo…): espera a que
+termine. Con **Actualizar sola** apagado, solo avisa y se instala con el botón.
+
+Instalado queda así:
+
+```
+C:\Mostrador\
+  Abrir Mostrador.cmd   abre el programa (la primera vez crea los accesos directos)
+  python\               Python oficial embebido (no cambia)
+  lib\                  librerías (cambia solo si cambian)
+  app\                  código del programa (es lo que se actualiza)
+```
+
+Ojo: el repositorio tiene que ser **público** para que los clientes puedan bajar los Releases, y
+cualquiera con permiso de escritura puede publicar una versión que todas las PCs van a instalar
+solas. Conviene tener la verificación en dos pasos en las cuentas de GitHub con acceso.
 
 ## Desarrollo
 
@@ -48,33 +109,33 @@ Requiere Python 3.11 o más nuevo.
 
 ```
 pip install -r requirements.txt -r requirements-dev.txt
-python main.py                 abre la app
-python main.py --navegador     la abre en el navegador (más cómodo para tocar la interfaz)
-python -m pytest -q tests      pruebas del motor
+python main.py                 abre la página en el navegador (con consola)
+python main.py --puerto 8765   en otro puerto, para no chocar con uno instalado
+python -m pytest -q tests      pruebas (sin tocar ninguna tienda ni GitHub)
 ```
 
-Para desarrollar contra una tienda sin pasar por el asistente:
+Desde el código fuente la versión es `0.0-dev` y no se actualiza sola.
+
+Para desarrollar contra una tienda sin pasar por la bienvenida:
 
 ```
 $env:TN_STORE_ID = "1234567"; $env:TN_TOKEN = "abc..."; $env:MOSTRADOR_DATOS = "datos-dev"
-python main.py --navegador
+python main.py
 ```
 
-### Armar el instalador
-
-1. `construir.bat` → instala dependencias, corre las pruebas, arma el ícono y deja
-   `dist\Mostrador\Mostrador.exe`.
-2. Abrir `empaquetar\instalador.iss` con [Inno Setup 6](https://jrsoftware.org/isinfo.php) y
-   compilar → `dist\Mostrador-<versión>-instalador.exe`.
-
-Al sacar una versión nueva, cambiarla en `mostrador/__init__.py`, `empaquetar/version.txt` y
-`empaquetar/instalador.iss`.
+Para armar el paquete a mano (con el mismo Python que el embebido):
+`./scripts/armar_paquete.ps1 -PythonVersion 3.12.10` y después `./tests/probar_actualizacion.ps1`.
 
 ## Cómo está hecho
 
 ```
-main.py                 arranca el servidor local y abre la ventana (pywebview / WebView2)
+Mostrador.pyw           punto de entrada (lo abre el acceso directo con pythonw.exe)
+main.py                 lo mismo, para desarrollar con consola
 mostrador/
+  app.py                arranque: servidor, abrir la página, una sola copia, reinicio al actualizar
+  arranque.py           pone las librerías nuevas antes de cargarlas (solo librería estándar)
+  actualizador.py       actualización automática desde los Releases
+  sistema.py            Windows: dónde está instalado, accesos directos, avisos
   tiendanube.py         cliente de la API: reintentos, límite de pedidos, errores explicados
   productos.py          leer y escribir productos y variantes; números como los escribe la gente
   precios.py            leer listas, adivinar columnas, buscar códigos, calcular, vista previa
@@ -85,8 +146,11 @@ mostrador/
   servidor.py           la API local que usa la interfaz (Flask)
   config.py             dónde se guarda cada cosa
 web/                    la interfaz: HTML, CSS y JS sin librerías ni internet
-empaquetar/             PyInstaller, Inno Setup e ícono
-tests/                  pruebas del motor (sin tocar ninguna tienda)
+recursos/               ícono de los accesos directos y LEEME.txt del paquete
+vendedor/               alta de clientes (saca número de tienda y token); no va en el paquete
+scripts/                armar el paquete (lo usa el workflow) y dibujar el ícono
+tests/                  pruebas (sin tocar ninguna tienda) y prueba de punta a punta del paquete
+.github/workflows/      arma, prueba y publica cada versión
 ```
 
 **Seguridad.** El servidor escucha solo en `127.0.0.1`, exige en cada pedido una clave aleatoria
@@ -104,7 +168,7 @@ redondeo usa ".5 para arriba" porque `round()` de Python redondea al par.
 - Varias tiendas en la misma app.
 - App publicada en la tienda de apps de Tiendanube, para que el cliente instale con un clic en
   vez de crear su propia aplicación.
-- Licencias y actualizaciones automáticas.
+- Licencias.
 
 ## Licencia
 

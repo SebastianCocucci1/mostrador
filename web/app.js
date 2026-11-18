@@ -104,11 +104,60 @@ async function api(metodo, ruta, cuerpo, form) {
   if (form) op.body = form;
   else if (cuerpo !== undefined) { op.headers["Content-Type"] = "application/json"; op.body = JSON.stringify(cuerpo); }
   let r;
-  try { r = await fetch(ruta, op); } catch { throw new Error("La app no responde. Cerrala y volvé a abrirla."); }
+  try { r = await fetch(ruta, op); } catch { throw new Error(`${document.title} no responde. Abrilo de nuevo desde el ícono del escritorio.`); }
+  // 403 = la clave de esta página ya no sirve: el programa se reinició (por
+  // ejemplo, después de actualizarse). Si está andando, se recarga la página.
+  if (r.status === 403 && await ping()) recargar();
   let d = {};
   try { d = await r.json(); } catch { /* respuesta sin cuerpo */ }
   if (!r.ok) { const e = new Error(d.error || `Error ${r.status}`); e.status = r.status; throw e; }
   return d;
+}
+
+/* ------------------------------------------------------------ el programa de fondo
+   La página habla con un programa que corre en la PC. Si se reinicia (al
+   instalar una versión nueva) cambia la clave y quizás la versión: cuando
+   vuelve a responder, la página se recarga sola. */
+let programaCaido = false, programaCerrado = false;
+
+async function ping() {
+  try {
+    const r = await fetch("/ping", { cache: "no-store" });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+
+function recargar() {
+  try { sessionStorage.setItem("mostrador.version-antes", VERSION); } catch { /* sin almacenamiento */ }
+  location.reload();
+}
+
+function bandaSistema(texto) {
+  let b = $("#banda-sistema");
+  if (!texto) { b?.remove(); return; }
+  if (!b) { b = document.createElement("div"); b.id = "banda-sistema"; b.className = "banda-sistema"; document.body.append(b); }
+  b.innerHTML = `<div class="rueda" style="width:16px;height:16px;border-width:2px"></div><div>${esc(texto)}</div>`;
+}
+
+async function vigilarPrograma() {
+  if (programaCerrado) return;
+  const p = await ping();
+  if (!p) {
+    if (!programaCaido) {
+      programaCaido = true;
+      bandaSistema(`${document.title} se está actualizando. Esperá unos segundos…`);
+    }
+    setTimeout(vigilarPrograma, 2000);
+    return;
+  }
+  if (programaCaido || p.version !== VERSION) { recargar(); return; }
+  setTimeout(vigilarPrograma, 15000);
+}
+
+function avisoDeActualizacion() {
+  let antes = null;
+  try { antes = sessionStorage.getItem("mostrador.version-antes"); sessionStorage.removeItem("mostrador.version-antes"); } catch { /* nada */ }
+  if (antes && antes !== VERSION) avisar(`¡${document.title} se actualizó a la versión ${VERSION}!`, "exito");
 }
 
 const abrirWeb = (url) => api("POST", "/api/abrir", { ruta: url }).catch((e) => avisar(e.message, "error"));
@@ -306,7 +355,14 @@ function render() {
 /* =====================================================================
    Bienvenida: conectar la tienda
    ===================================================================== */
-let modoConexion = "app";
+let modoConexion = "token";   // "app" = conexión avanzada (crear la app en partners)
+
+/* Si pegaron el mensaje entero (con número de tienda y token), separa los dos. */
+function separarDatos(texto) {
+  const id = /(?:tienda|store[_ ]?id)\D{0,20}?(\d{3,})/i.exec(texto);
+  const tok = /token\W{0,10}(?:bearer\s+)?([A-Za-z0-9]{20,})/i.exec(texto);
+  return id && tok ? { id: id[1], token: tok[1] } : null;
+}
 
 function paginaBienvenida(el) {
   el.innerHTML = `<div class="bienvenida"><div class="caja">
@@ -321,28 +377,40 @@ function paginaBienvenida(el) {
       <div class="beneficio">${ico("escudo")}<div><strong>Sin miedo a equivocarte</strong>Todo se prueba antes y se guarda un respaldo automático.</div></div>
     </div>
     <div class="tarjeta">
-      <div class="cab"><h2>Conectá tu tienda</h2><span class="espacio"></span>
-        <div class="pestanas">
-          <button data-modo="app" class="${modoConexion === "app" ? "activo" : ""}">Paso a paso</button>
-          <button data-modo="token" class="${modoConexion === "token" ? "activo" : ""}">Ya tengo un token</button>
-        </div></div>
+      <div class="cab"><h2>${modoConexion === "token" ? "Conectá tu tienda" : "Conexión avanzada"}</h2></div>
       <div class="cuerpo" id="conexion"></div>
     </div>
     <p class="tenue" style="text-align:center;margin-top:16px;font-size:12.5px">${ico("escudo")} La conexión se guarda solo en esta computadora. La app nunca manda tus datos a ningún otro lado.</p>
   </div></div>`;
-  $$("[data-modo]", el).forEach((b) => b.onclick = () => { modoConexion = b.dataset.modo; paginaBienvenida(el); });
   const c = $("#conexion", el);
   if (modoConexion === "token") {
     c.innerHTML = `<div class="pila" style="max-width:560px">
-      <p class="texto-2">Si ya tenés el número de tienda y el token de acceso (por ejemplo, porque te los pasó quien te instaló la app), pegalos acá.</p>
-      <div class="campo"><label for="c-id">Número de tienda</label><input class="input" id="c-id" inputmode="numeric" placeholder="1234567">
-        <span class="ayuda">Son solo números. Lo ves en el panel de Tiendanube, en la dirección: /admin/v2/… o en Mi cuenta.</span></div>
-      <div class="campo"><label for="c-token">Token de acceso</label><input class="input mono" id="c-token" placeholder="abc123…" autocomplete="off"></div>
-      <div><button class="btn primario grande" id="c-ok">${ico("enlace")} Conectar</button></div></div>`;
-    $("#c-ok", c).onclick = () => conectar("/api/conexion/token", { tienda_id: $("#c-id", c).value, token: $("#c-token", c).value }, $("#c-ok", c));
+      <p class="texto-2">Pegá los dos datos que te mandamos para conectar tu tienda. Si te llegaron juntos en un mensaje, pegalo entero en cualquiera de los dos campos: se acomodan solos.</p>
+      <div class="campo"><label for="c-id">Número de tienda</label><input class="input" id="c-id" inputmode="numeric" placeholder="Por ejemplo: 1234567" autocomplete="off"></div>
+      <div class="campo"><label for="c-token">Token</label><input class="input mono" id="c-token" placeholder="Un texto largo de letras y números" autocomplete="off" spellcheck="false"></div>
+      <div><button class="btn primario grande" id="c-ok">${ico("enlace")} Conectar</button></div>
+      <p class="tenue" style="font-size:13px;margin:4px 0 0">¿No tenés estos datos? Pediselos a quien te dio la app.
+        <a href="#" id="c-avanzada" style="margin-left:6px">Conexión avanzada</a></p></div>`;
+    const id = $("#c-id", c), token = $("#c-token", c), ok = $("#c-ok", c);
+    for (const campo of [id, token]) {
+      campo.addEventListener("paste", (e) => {
+        const d = separarDatos(e.clipboardData.getData("text"));
+        if (!d) return;
+        e.preventDefault();
+        id.value = d.id;
+        token.value = d.token;
+        ok.focus();
+      });
+      campo.addEventListener("keydown", (e) => { if (e.key === "Enter") ok.click(); });
+    }
+    ok.onclick = () => conectar("/api/conexion/token", { tienda_id: id.value, token: token.value }, ok);
+    $("#c-avanzada", c).onclick = (e) => { e.preventDefault(); modoConexion = "app"; paginaBienvenida(el); };
+    id.focus();
     return;
   }
-  c.innerHTML = `<ol class="instrucciones">
+  c.innerHTML = `<p class="texto-2" style="margin-top:0">Para quien prefiera crear su propia aplicación de Tiendanube en vez de usar los datos que le pasaron.
+    <a href="#" id="c-volver" style="margin-left:6px">Volver</a></p>
+  <ol class="instrucciones">
     <li><div><strong>Creá tu cuenta de socio en Tiendanube</strong> (es gratis y se hace una sola vez).
       <div style="margin-top:8px"><button class="btn chico" data-web="https://partners.tiendanube.com">${ico("externo")} Abrir partners.tiendanube.com</button></div></div></li>
     <li><div><strong>Creá una aplicación</strong> en <em>Aplicaciones → Crear aplicación</em>, con estos datos:
@@ -363,6 +431,7 @@ function paginaBienvenida(el) {
       <div style="margin-top:12px"><button class="btn primario grande" id="c-ok">${ico("enlace")} Conectar mi tienda</button></div></div></li>
   </ol>`;
   $$("[data-web]", c).forEach((b) => b.onclick = () => abrirWeb(b.dataset.web));
+  $("#c-volver", c).onclick = (e) => { e.preventDefault(); modoConexion = "token"; paginaBienvenida(el); };
   $("#c-autorizar", c).onclick = async () => {
     try {
       const r = await api("POST", "/api/conexion/link", { app_id: $("#c-app", c).value });
@@ -1514,9 +1583,26 @@ function paginaConfig(el) {
         <p class="texto-2">Copias de seguridad y configuración:</p>
         <div class="fila"><span class="mono tenue" style="flex:1;word-break:break-all">${esc(E.estado.carpeta_datos)}</span><button class="btn chico" data-carpeta>${ico("carpeta")} Abrir</button></div>
         <p class="tenue" style="font-size:13px">Las planillas exportadas van a <span class="mono">Documentos\\${esc(document.title)}</span>.</p></div></div>
+      <div class="tarjeta"><div class="cab">${ico("recargar")}<h2>Actualizaciones</h2><span class="espacio"></span><span id="act-insignia"></span></div>
+        <div class="cuerpo pila">
+          <div class="fila"><div style="flex:1"><div class="tenue" style="font-size:12.5px">Versión instalada</div><strong>${esc(VERSION)}</strong></div>
+            <button class="btn" id="act-buscar">${ico("recargar")} Buscar actualizaciones</button></div>
+          <div id="act-texto" class="texto-2"></div>
+          <label class="interruptor"><input type="checkbox" id="act-auto"><span><strong>Actualizar sola</strong> <span class="tenue">— instala las versiones nuevas apenas salen. Tarda unos segundos y la página se recarga sola.</span></span></label>
+        </div></div>
       <div class="tarjeta"><div class="cuerpo fila"><img src="/web/icono.svg" width="40" height="40" alt="">
-        <div style="flex:1"><strong>${esc(document.title)}</strong> <span class="tenue">versión ${esc(VERSION)}</span><div class="tenue" style="font-size:13px">Gestor de productos para Tiendanube.</div></div></div></div>
+        <div style="flex:1"><strong>${esc(document.title)}</strong> <span class="tenue">versión ${esc(VERSION)}</span><div class="tenue" style="font-size:13px">Gestor de productos para Tiendanube.</div></div>
+        <button class="btn" data-cerrar-app>${ico("x")} Cerrar ${esc(document.title)}</button></div></div>
     </div></div>`;
+  tarjetaActualizaciones(el);
+  $("[data-cerrar-app]", el).onclick = async () => {
+    if (!(await confirmar(`¿Cerrar ${document.title}?`, `El programa deja de correr en esta computadora. Tu tienda no se toca. Para volver a usarlo, abrilo desde el ícono del escritorio.`, { texto: "Cerrar" }))) return;
+    try {
+      await api("POST", "/api/cerrar");
+      programaCerrado = true;
+      document.body.innerHTML = `<div class="bienvenida"><div class="caja" style="text-align:center;padding-top:80px"><img src="/web/icono.svg" width="56" height="56" alt=""><h1>${esc(document.title)} está cerrado</h1><p class="texto-2">Ya podés cerrar esta pestaña. Para volver a usarlo, abrilo desde el ícono del escritorio.</p></div></div>`;
+    } catch (e) { avisar(e.message, "error"); }
+  };
   $$("[data-web]", el).forEach((a) => a.onclick = (e) => { e.preventDefault(); abrirWeb(a.dataset.web); });
   $$("[data-tema]", el).forEach((b) => b.onclick = () => { guardado.escribir("tema", b.dataset.tema); aplicarTema(b.dataset.tema); paginaConfig(el); });
   $("[data-carpeta]", el).onclick = () => abrirRuta(E.estado.carpeta_datos);
@@ -1538,10 +1624,53 @@ const PAGINAS = {
   excel: paginaExcel, respaldos: paginaRespaldos, config: paginaConfig,
 };
 
+/* Configuración → Actualizaciones: estado, "Buscar actualizaciones" y "Actualizar sola". */
+const TEXTO_ACTUALIZACION = {
+  sin_revisar: ["", "Todavía no se buscaron versiones nuevas."],
+  buscando: ["primario", "Buscando versiones nuevas…"],
+  al_dia: ["exito", "Estás al día."],
+  disponible: ["alerta", ""],
+  instalando: ["primario", ""],
+  reiniciando: ["primario", "Versión nueva instalada. Reiniciando…"],
+  error: ["peligro", ""],
+  desactivado: ["", ""],
+};
+
+async function tarjetaActualizaciones(el) {
+  const insignia = $("#act-insignia", el), texto = $("#act-texto", el), boton = $("#act-buscar", el), auto = $("#act-auto", el);
+  if (!insignia) return;
+  let a;
+  try { a = await api("GET", "/api/actualizacion"); } catch { return; }
+  if (!document.body.contains(insignia)) return;          // se cambió de página
+  const [tono, fijo] = TEXTO_ACTUALIZACION[a.estado] || ["", ""];
+  const trabajando = ["buscando", "instalando", "reiniciando"].includes(a.estado);
+  const etiquetas = { al_dia: "Al día", disponible: "Versión nueva", error: "No se pudo", buscando: "Buscando", instalando: "Instalando", reiniciando: "Reiniciando" };
+  insignia.innerHTML = etiquetas[a.estado] ? `<span class="insignia ${tono}"><span class="punto"></span>${etiquetas[a.estado]}</span>` : "";
+  const cuando = a.ultima_revision ? ` Última revisión: ${esc(fechaLinda(a.ultima_revision))}.` : "";
+  texto.innerHTML = (trabajando ? '<span class="rueda" style="display:inline-block;width:13px;height:13px;border-width:2px;vertical-align:-2px;margin-right:6px"></span>' : "")
+    + esc(a.mensaje || fijo) + (["al_dia", "error"].includes(a.estado) ? cuando : "");
+  boton.disabled = trabajando || a.estado === "desactivado";
+  boton.innerHTML = a.estado === "disponible" && !trabajando
+    ? `${ico("bajar")} Instalar la versión ${esc(a.version_disponible || "")}`
+    : `${ico("recargar")} Buscar actualizaciones`;
+  auto.checked = a.automatica !== false;
+  auto.disabled = a.estado === "desactivado";
+  boton.onclick = async () => {
+    try { await api("POST", "/api/actualizacion/buscar"); } catch (e) { avisar(e.message, "error"); }
+    setTimeout(() => tarjetaActualizaciones(el), 400);
+  };
+  auto.onchange = async () => {
+    try { await api("POST", "/api/actualizacion/automatica", { activo: auto.checked }); } catch (e) { avisar(e.message, "error"); }
+  };
+  if (trabajando) setTimeout(() => tarjetaActualizaciones(el), 1500);
+}
+
 async function arrancar() {
   aplicarTema(guardado.leer("tema", "sistema"));
   try { E.estado = await api("GET", "/api/estado"); } catch (e) { $("#principal").innerHTML = `<div class="pagina"><div class="aviso-caja peligro">${ico("alerta")}<div>${esc(e.message)}</div></div></div>`; return; }
   window.addEventListener("hashchange", render);
   render();
+  avisoDeActualizacion();
+  setTimeout(vigilarPrograma, 15000);
 }
 arrancar();

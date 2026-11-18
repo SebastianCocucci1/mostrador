@@ -1,15 +1,15 @@
-"""
+﻿"""
 Dibuja el icono de la app (el mismo de web/icono.svg) y lo guarda como .ico
-con todos los tamaños que usa Windows.
+con todos los tamaÃ±os que usa Windows.
 
-    python empaquetar/hacer_icono.py
+    python scripts/hacer_icono.py
 """
 
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-AQUI = Path(__file__).resolve().parent
+AQUI = Path(__file__).resolve().parent.parent / "recursos"
 LADO = 512
 
 
@@ -46,5 +46,4 @@ def dibujar():
 if __name__ == "__main__":
     im = dibujar()
     im.save(AQUI / "icono.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    im.save(AQUI / "icono.png")
     print("Listo:", AQUI / "icono.ico")

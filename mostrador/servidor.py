@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import secrets
-import sys
 import tempfile
 import threading
 import time
@@ -28,13 +27,12 @@ from werkzeug.serving import make_server
 
 from . import NOMBRE, VERSION, config, excel, fotos, precios, respaldos, tareas
 from .productos import caminos_categorias, cuerpo_stock, nombre, numero, precio, resumen, slug
-from .tiendanube import ErrorApi, Tiendanube, canjear_codigo, link_autorizar
+from .tiendanube import ErrorApi, Tiendanube, canjear_codigo, limpiar_conexion, link_autorizar
 
 
 def carpeta_web():
-    # empaquetado con PyInstaller los archivos quedan en sys._MEIPASS
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-    return base / "web"
+    # <raiz>\app\web instalado, o la carpeta web del codigo fuente
+    return Path(__file__).resolve().parent.parent / "web"
 
 
 class Estado:
@@ -84,7 +82,8 @@ class Estado:
             self.productos = [x for x in self.productos if x["id"] != pid]
 
 
-def crear_app():
+def crear_app(actualizador=None, al_cerrar=None):
+    """actualizador: el de actualizador.py (o None); al_cerrar: corta el servidor."""
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024
     app.config["JSON_AS_ASCII"] = False
@@ -122,6 +121,13 @@ def crear_app():
         return jsonify(tarea=t.id)
 
     # ------------------------------------------------------------ la pagina
+    @app.get("/ping")
+    def ping():
+        # sin clave: lo usan una segunda copia (para no abrir dos) y la pagina
+        # (para darse cuenta de que el programa se reinicio con otra version)
+        return jsonify(app=NOMBRE, version=VERSION,
+                       actualizacion=actualizador.estado.estado if actualizador else "desactivado")
+
     @app.get("/")
     def inicio():
         html = (carpeta_web() / "index.html").read_text(encoding="utf-8")
@@ -147,12 +153,20 @@ def crear_app():
             except ErrorApi:
                 pass
         return jsonify(nombre=NOMBRE, version=VERSION, conectado=bool(est.tn),
+                       actualizacion=estado_actualizacion(),
                        tienda={k: v for k, v in (est.tienda or {}).items() if k != "token"},
                        cargado=bool(est.cargado), carpeta_datos=str(config.carpeta_datos()))
 
     def guardar_conexion(tienda_id, token):
         tn = Tiendanube(tienda_id, token)
-        info = tn.tienda()          # valida el token de paso
+        try:
+            info = tn.tienda()          # valida el token de paso
+        except ErrorApi as e:
+            if e.codigo in (401, 403, 404):
+                raise ErrorApi("Tiendanube no reconoce esos datos. Revisá que el número de tienda y el "
+                               "token estén bien copiados, completos y sean de la misma tienda.",
+                               e.codigo, e.detalle) from e
+            raise
         datos = {"id": str(tienda_id), "token": token,
                  "nombre": (info.get("name") or {}).get("es") if isinstance(info.get("name"), dict)
                  else info.get("name") or "",
@@ -168,9 +182,13 @@ def crear_app():
     @app.post("/api/conexion/token")
     def conectar_token():
         d = cuerpo()
-        tid, token = str(d.get("tienda_id") or "").strip(), str(d.get("token") or "").strip()
-        if not tid.isdigit() or not token:
-            raise ValueError("Completá el número de tienda (solo números) y el token.")
+        tid, token = limpiar_conexion(d.get("tienda_id"), d.get("token"))
+        if not tid and not token:
+            raise ValueError("Pegá el número de tienda y el token que te pasaron.")
+        if not tid:
+            raise ValueError("Falta el número de tienda (son solo números, por ejemplo 1234567).")
+        if not token:
+            raise ValueError("Falta el token (es un texto largo de letras y números).")
         return guardar_conexion(tid, token)
 
     @app.post("/api/conexion/link")
@@ -539,6 +557,39 @@ def crear_app():
         tareas.cancelar(tid)
         return jsonify(ok=True)
 
+    # ------------------------------------------------------------ actualizaciones
+    def estado_actualizacion():
+        if not actualizador:
+            return {"estado": "desactivado", "version_actual": VERSION, "mensaje": ""}
+        return actualizador.estado.como_dict()
+
+    @app.get("/api/actualizacion")
+    def ver_actualizacion():
+        return jsonify(estado_actualizacion())
+
+    @app.post("/api/actualizacion/buscar")
+    def buscar_actualizacion():
+        if not actualizador or actualizador.estado.estado == "desactivado":
+            raise ValueError("Esta copia no se actualiza sola (es la versión de desarrollo).")
+        actualizador.buscar_ahora()
+        return jsonify(estado_actualizacion())
+
+    @app.post("/api/actualizacion/automatica")
+    def actualizar_solo():
+        activo = bool(cuerpo().get("activo"))
+        config.guardar_preferencia("actualizar_solo", activo)
+        if actualizador:
+            actualizador.estado.automatica = activo
+        return jsonify(estado_actualizacion())
+
+    @app.post("/api/cerrar")
+    def cerrar():
+        if tareas.hay_en_curso():
+            raise ValueError("Hay un trabajo en curso. Esperá a que termine (o cancelalo) antes de cerrar.")
+        if al_cerrar:
+            threading.Timer(0.5, al_cerrar).start()     # que la respuesta llegue antes de cortar
+        return jsonify(ok=True)
+
     # ------------------------------------------------------------ abrir cosas
     @app.post("/api/abrir")
     def abrir():
@@ -562,16 +613,10 @@ def crear_app():
     return app
 
 
-def arrancar(puerto=0):
-    """Levanta el servidor en un hilo. Devuelve (servidor, url)."""
-    # sin consola (el .exe) no hay donde escribir el registro de cada pedido
+def crear_servidor(puerto, actualizador=None, al_cerrar=None):
+    """El servidor listo para serve_forever(). Levanta OSError si el puerto esta ocupado."""
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w")      # noqa: SIM115
-    if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w")      # noqa: SIM115
-    app = crear_app()
+    app = crear_app(actualizador, al_cerrar)
     srv = make_server("127.0.0.1", puerto, app, threaded=True)
     app.config["HOST_PERMITIDO"] = f"127.0.0.1:{srv.server_port}"
-    threading.Thread(target=srv.serve_forever, daemon=True, name="servidor").start()
-    return srv, f"http://127.0.0.1:{srv.server_port}/"
+    return srv

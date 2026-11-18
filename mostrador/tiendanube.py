@@ -159,6 +159,30 @@ class Tiendanube:
         return self.put(f"products/{pid}/variants/{vid}", cuerpo)
 
 
+# ------------------------------------------------------------- conexion
+
+def limpiar_conexion(tienda_id, token):
+    """Lo que pega la gente -> (tienda_id, token) limpios.
+
+    Se aceptan como vengan de un mensaje o de un archivo:
+        "Número de tienda: 1234567", "TN_STORE_ID=1234567", " 1234567 "
+        "Token: abc123", "bearer abc123", "'abc123'", "TN_TOKEN=abc123"
+    Y si en un campo pegaron el mensaje entero (con los dos datos), se
+    separan solos.
+    """
+    tid, tok = str(tienda_id or "").strip(), str(token or "").strip()
+    for texto in (tid, tok):
+        m_id = re.search(r"(?:tienda|store[_ ]?id|user_id)\D{0,20}?(\d{3,})", texto, re.I)
+        m_tok = re.search(r"(?:token|access_token)\W{0,10}(?:bearer\s+)?([A-Za-z0-9]{20,})", texto, re.I)
+        if m_id and m_tok:
+            return m_id.group(1), m_tok.group(1)
+    digitos = re.findall(r"\d+", tid)
+    tid = max(digitos, key=len) if digitos else ""
+    tok = re.sub(r"(?i)^(tn_token\s*=|access_token\s*[:=]|token\s*(de acceso)?\s*[:=]?)", "", tok).strip()
+    tok = re.sub(r"(?i)^bearer\s+", "", tok).strip().strip("'\"`").strip()
+    return tid, tok
+
+
 # ------------------------------------------------------------------ OAuth
 
 def link_autorizar(app_id):
